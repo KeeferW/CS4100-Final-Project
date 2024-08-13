@@ -2,7 +2,7 @@ import cv2
 import pytesseract
 import numpy as np
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Change this to wherever tesseract is installed, but this is the default im pretty sure
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Change this to wherever tesseract is installed, but this is the default im pretty sure, can also delete this and it'll still work probably
 
 def select_roi(video_path):
     cap = cv2.VideoCapture(video_path)
@@ -60,7 +60,6 @@ def detect_ammo_drops(video_path, roi):
     
     cap.release()
 
-# Main function
 def main():
     video_path = "valorant example footage.mp4" 
     roi = select_roi(video_path)
