@@ -1,93 +1,73 @@
 import cv2
+import pytesseract
 import numpy as np
-import tkinter as tk
-from tkinter import filedialog
-from scipy.ndimage import label
 
-# This file accepts an .mp4, and allows the user to draw a box around the ammo counter. Whenever the number drops by 1 (a shot is fired), it prints the frame and timestamp.
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Change this to wherever tesseract is installed, but this is the default im pretty sure
 
-# Function to select bounding box
-def select_bounding_box(video_path):
-    # Open MP4
+def select_roi(video_path):
     cap = cv2.VideoCapture(video_path)
     ret, frame = cap.read()
     
     if not ret:
-        print("Failed to read the video.")
+        print("Failed to read video")
         cap.release()
-        return None, None
+        return None
     
-    # Select a window on the first frame (Draw a box around the ammo)
-    bbox = cv2.selectROI("Select Region", frame, fromCenter=False, showCrosshair=False)
-    cv2.destroyWindow("Select Region")
-    return bbox, frame
+    roi = cv2.selectROI("Select Ammo Count", frame, fromCenter=False, showCrosshair=True)
+    cv2.destroyWindow("Select Ammo Count")
+    
+    cap.release()
+    return roi
 
-# Function to detect numbers within the ROI
-def detect_number(roi):
-    # Convert to grayscale and threshold
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV)
-    
-    # Find contours in the thresholded image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    digit_imgs = []
-    
-    for cnt in contours:
-        if cv2.contourArea(cnt) > 100:  # Filter small contours
-            x, y, w, h = cv2.boundingRect(cnt)
-            digit_roi = thresh[y:y+h, x:x+w]
-            digit_imgs.append(digit_roi)
-    
-    # Sort digits by their x position (left to right)
-    digit_imgs = sorted(digit_imgs, key=lambda img: cv2.boundingRect(img)[0])
-    
-    # Count the number of digits detected
-    return len(digit_imgs) if digit_imgs else None
-
-# Function to detect when the number drops by one
-def detect_number_drop(video_path, bbox):
+# Process video and detect ammo drops
+def detect_ammo_drops(video_path, roi):
     cap = cv2.VideoCapture(video_path)
-    prev_number = None
-    
-    frame_num = 0
     fps = cap.get(cv2.CAP_PROP_FPS)
-    
-    while True:
+    prev_count = None
+
+    frame_number = 0
+
+    while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
         
-        # Calculate timestamp for current frame
-        timestamp = frame_num / fps
+        # Crop ROI
+        x, y, w, h = roi
+        ammo_region = frame[y:y+h, x:x+w]
         
-        # Crop to the bounding box
-        x, y, w, h = bbox
-        cropped_frame = frame[y:y+h, x:x+w]
+        gray = cv2.cvtColor(ammo_region, cv2.COLOR_BGR2GRAY)
+        gray = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        gray = cv2.medianBlur(gray, 3)
         
-        # Detect the number in the current frame
-        current_number = detect_number(cropped_frame)
-        
-        if current_number is not None and prev_number is not None:
-            if current_number == prev_number - 1:
-                print(f"Number dropped from {prev_number} to {current_number} at frame: {frame_num}, time: {timestamp:.2f} seconds")
-        
-        prev_number = current_number
-        frame_num += 1
+        # Tesseract algorithm to recognize digits
+        config = "--psm 7"
+        ammo_count = pytesseract.image_to_string(gray, config=config, lang='eng')
+        ammo_count = ''.join(filter(str.isdigit, ammo_count)) 
+    
+        if ammo_count.isdigit():
+            current_count = int(ammo_count)
+            
+            if prev_count is not None and current_count < prev_count:
+                timestamp = frame_number / fps
+                print(f"Bullet fired at frame {frame_number}, timestamp {timestamp:.2f} seconds")
+            
+            prev_count = current_count
+        elif prev_count is not None:
+            pass
+
+        frame_number += 1
     
     cap.release()
 
-def open_video_file():
-    root = tk.Tk()
-    root.withdraw()
-    video_path = filedialog.askopenfilename(filetypes=[("MP4 files", "*.mp4")])
-    return video_path
+# Main function
+def main():
+    video_path = "valorant example footage.mp4" 
+    roi = select_roi(video_path)
+    
+    if roi is not None:
+        detect_ammo_drops(video_path, roi)
 
 if __name__ == "__main__":
-    video_path = open_video_file()
-    if not video_path:
-        print("No video file selected.")
-    else:
-        bbox, first_frame = select_bounding_box(video_path)
-        if bbox is not None:
-            detect_number_drop(video_path, bbox)
+    main()
+
